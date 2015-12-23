@@ -124,20 +124,20 @@ def collision():
     u = vPuck
     
 def kinematics(i):
-    global theta
+    global theta,de
     fkine()
     jacobian()
     Jinv=np.matrix.transpose(np.mat(J))*np.linalg.inv((np.mat(J)*np.matrix.transpose(np.mat(J)) + 40.0*np.identity(2))) #DLS
     count1=0
     
     if i==0:
-        if count1<0:
+        if count1<1:
             G[0] = int( predictPos[0][0] - strikeTime*uArm[0]/2 -transform[0]-e[0] )
             G[1] = int( -predictPos[1][0] + strikeTime*uArm[1]/2 +transform[1]-e[1] )
             de= G/(predictTime-strikeTime)
             count1=999
             
-    else:
+    if i==1:
         G[0] =predictPos[0][0]-transform[0]-e[0]
         G[1] =-predictPos[1][0]+transform[1]-e[1]
         de=G/strikeTime
@@ -169,7 +169,7 @@ def animation(i):
 
         pygame.draw.line(screen, linecolor, (int(predictPos[0][0])- 0.5*uArm[0], int(predictPos[1][0]) - 0.5*uArm[1]), (int(predictPos[0][0]) + 0.5*uArm[0], int(predictPos[1][0]) + 0.5*uArm[1] )  , 1)
 
-        pygame.draw.circle(screen, linecolor, (int(predictPos[0][0] - strikeTime*0.1*uArm[0]), int(predictPos[1][0]- strikeTime*0.1*uArm[1]) ) , 3, 1)
+        pygame.draw.circle(screen, linecolor, (int(predictPos[0][0] - strikeTime*0.5*uArm[0]), int(predictPos[1][0]- strikeTime*0.5*uArm[1]) ) , 3, 1)
 
 
         pygame.draw.line(screen, linecolor, (10,int(predictPos[1][0])),(width+10, int(predictPos[1][0])) , 1)
