@@ -1,0 +1,205 @@
+import numpy as np
+import sys
+import time
+import pygame
+from random import randint
+
+##############
+background_colour = (255,255,255)
+(width, height) = (300, 600)
+origin=(10,10)
+linecolor= (0, 0, 255)
+puckcolor = (255,0,0)
+armcolor = (0,174,239)
+endcolor = (223,246,36)
+dt=0.005    #refresh rate
+velocity=10.0
+
+COR=1.0
+global predictTime, predictPos                   #gives time at which the puck comes to the attack zone
+predictPos=np.matrix([[0.0],[0.0]])
+
+global e,de,J,dtheta,E,theta,G,L
+L=100
+e = np.empty([2, 1], dtype=float)
+de = np.empty([2, 1], dtype=float)
+J = np.empty([2, 2], dtype=float)
+dtheta = np.empty([2, 1], dtype=float)
+E = np.empty([2, 1], dtype=float) #error
+G = np.empty([2, 1], dtype=float)   #goal vecotor
+
+transform = np.matrix([[float(width/2 +10)],[ float(height +10)]])
+
+theta=np.matrix([[135.0],[-135.0]])
+
+global t,uArm,vPuck,strikeTime
+t=1.5       #time for the puck to score
+uArm=np.matrix([[0.0],[0.0]])
+vPuck=np.matrix([[0.0],[0.0]])
+
+strikeTime=0.0        # time of attack motion 
+armAcceleration=200.0
+###############
+
+def initialize():
+    global a,u,pos
+    a=np.matrix([[-10.0], [-10.0]])         #deceleration rate of puck
+    u=np.matrix([[100.0], [200.0]])       #initial velocity of puck as column vector
+    pos=np.matrix([[150.0],[10.0]])         #initial position of puck as column vector
+
+def newPos(t):
+    global a,u,pos
+    if u[0][0]>0:
+        a[0][0]= -1*abs(a[0][0])
+    else:
+        a[0][0]= abs(a[0][0])
+            
+    if u[1][0]>0:
+        a[1][0]= -1*abs(a[1][0])
+    else:
+        a[1][0]= abs(a[1][0])
+
+    u+= a*t
+    pos+=u*t
+
+    if pos[0][0]>width+10 or pos[0][0]<10:
+        u[0][0]=-0.95*(u[0][0])    #restitution factor for rebounding
+       
+    if pos[1][0]>height+10 or pos[1][0]<10:
+        u[1][0]=-0.95*(u[1][0])
+
+def  predict(pos,reach):
+    global predictTime
+    predictTime=0.0
+    while pos[1][0] <= reach or predictTime <= dt:
+        newPos(dt)
+        predictTime+=dt
+        if predictTime>999:
+            print "Doesnt reach"
+            break
+    return pos,predictTime
+
+def prediction():
+    global predictPos,predictTime,uArm,strikeTime
+    predictPos,predictTime= predict(pos,450)
+
+    returnVelocity(1,0)
+    uArm = u + vPuck/COR
+    strikeTime = float(np.hypot(uArm[0],uArm[1])/armAcceleration)
+ 
+    if randint(0,1):
+        initialize()
+  
+#FK definition
+def fkine():
+    e[0] = L*(np.cos(np.deg2rad(theta[0])) + np.cos(np.deg2rad(theta[0]+theta[1])))
+    e[1] = L*(np.sin(np.deg2rad(theta[0])) + np.sin(np.deg2rad(theta[0]+theta[1])))
+
+# compute jacobian
+
+def jacobian():
+    J[0,0] =  -L*(np.sin(np.deg2rad(theta[0])) + np.sin(np.deg2rad(theta[0]+theta[1])))
+    J[0,1] =  -L*(np.sin(np.deg2rad(theta[0]+theta[1])))
+    J[1,0] =   L*(np.cos(np.deg2rad(theta[0])) + np.cos(np.deg2rad(theta[0]+theta[1])))
+    J[1,1] =   L*(np.cos(np.deg2rad(theta[0]+theta[1])))
+
+def returnVelocity(i,j):    #after being hit by arm
+    if i==0:
+        vPuck[0]= (width/2 + 10 - pos[0])/t
+        vPuck[1]= -(pos[1] - 10)/t
+    if i==1:
+        vPuck[1]= -(pos[1] - 10)/t
+        if j==1:
+            vPuck[0]= -(width/2 + pos[0] - 10)/t
+        else:
+            vPuck[0]= (3*width/2 +10 -pos[0])/t
+    if i==2:
+        vPuck[0]= (3*width/2 - 10 + pos[0])/t
+        vPuck[1]= -(pos[1] - 10)/t
+    
+def collision():
+    global u,uArm
+    returnVelocity(1,0)
+   # uArm = u + vPuck/COR
+    u = vPuck
+    
+def kinematics(i):
+    global theta
+    fkine()
+    jacobian()
+    Jinv=np.matrix.transpose(np.mat(J))*np.linalg.inv((np.mat(J)*np.matrix.transpose(np.mat(J)) + 40.0*np.identity(2))) #DLS
+    count1=0
+    
+    if i==0:
+        if count1<0:
+            G[0] = int( predictPos[0][0] - strikeTime*uArm[0]/2 -transform[0]-e[0] )
+            G[1] = int( -predictPos[1][0] + strikeTime*uArm[1]/2 +transform[1]-e[1] )
+            de= G/(predictTime-strikeTime)
+            count1=999
+            
+    else:
+        G[0] =predictPos[0][0]-transform[0]-e[0]
+        G[1] =-predictPos[1][0]+transform[1]-e[1]
+        de=G/strikeTime
+    
+    print G
+  
+    dtheta = Jinv*de
+    theta+=dtheta
+
+
+def animation(i):
+    count=0
+
+    kinematics(i)
+    
+    while np.hypot(G[0],G[1])>1:
+        newPos(dt)
+
+        kinematics(i)
+        #print G  
+        if abs(np.sum(pos-predictPos))<1:
+            collision()
+            count+=1
+            if count>1:
+                break
+
+        pygame.draw.line(screen, armcolor, (width/2 +10, height+10 ),(width/2 +10 + int(L*np.cos(np.deg2rad(theta[0]))) , height+10 - int(L*np.sin(np.deg2rad(theta[0])))) , 5)
+        pygame.draw.line(screen, armcolor, (width/2 +10 + e[0], height+10 - e[1] ),(width/2 +10 + int(L*np.cos(np.deg2rad(theta[0]))) , height+10 - int(L*np.sin(np.deg2rad(theta[0])))) , 5)
+
+        pygame.draw.line(screen, linecolor, (int(predictPos[0][0])- 0.5*uArm[0], int(predictPos[1][0]) - 0.5*uArm[1]), (int(predictPos[0][0]) + 0.5*uArm[0], int(predictPos[1][0]) + 0.5*uArm[1] )  , 1)
+
+        pygame.draw.circle(screen, linecolor, (int(predictPos[0][0] - strikeTime*0.1*uArm[0]), int(predictPos[1][0]- strikeTime*0.1*uArm[1]) ) , 3, 1)
+
+
+        pygame.draw.line(screen, linecolor, (10,int(predictPos[1][0])),(width+10, int(predictPos[1][0])) , 1)
+        pygame.draw.circle(screen, linecolor, (int(predictPos[0][0]), int(predictPos[1][0]) ) , 5, 1)
+
+        pygame.draw.line(screen, linecolor,(10,height/2 +10),(width+10,height/2+10) , 2)
+        pygame.draw.circle(screen, linecolor, (width/2 +10 , height/2 +10 ) , 60, 2)
+        pygame.draw.circle(screen, puckcolor, (int(pos[0,0]),int(pos[1,0]) ) , 8, 0)
+        pygame.draw.line(screen, linecolor,origin,(width+10,10) , 5)
+        pygame.draw.line(screen, linecolor,origin,(10,height+10) , 5)
+        pygame.draw.line(screen, linecolor,(width+10,10), (width+10, height+10), 5)
+        pygame.draw.line(screen, linecolor,(10,height+10), (width+10, height+10) , 5)
+        
+        pygame.display.flip()
+        time.sleep(dt)
+        screen.fill(background_colour)
+    
+    
+if __name__ == "__main__":
+
+    initialize()
+    prediction()
+    initialize()
+    screen = pygame.display.set_mode((width+20, height+20))
+    pygame.display.set_caption('AIR HOCKEY SIMULATOR')
+    screen.fill(background_colour)
+
+    animation(0)
+    print "striking trajectory" 
+    animation(1)
+
+    velocity=np.sqrt(np.square(u[0][0]) + np.square(u[1][0]))
+   
