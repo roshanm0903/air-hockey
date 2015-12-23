@@ -1,0 +1,155 @@
+import numpy as np
+import sys
+import time
+import pygame
+from random import randint
+
+##############
+background_colour = (255,255,255)
+(width, height) = (300, 600)
+origin=(10,10)
+linecolor= (0, 0, 255)
+puckcolor = (255,0,0)
+armcolor = (0,174,239)
+endcolor = (223,246,36)
+dt=0.005    #refresh rate
+velocity=10.0
+
+COR=1.0
+global predictTime, predictPos                   #gives time at which the puck comes to the attack zone
+predictPos=np.matrix([[0.0],[0.0]])
+
+global e,de,J,dtheta,E,theta,G,L
+L=100
+e = np.empty([2, 1], dtype=float)
+de = np.empty([2, 1], dtype=float)
+J = np.empty([2, 2], dtype=float)
+dtheta = np.empty([2, 1], dtype=float)
+E = np.empty([2, 1], dtype=float) #error
+G = np.empty([2, 1], dtype=float)   #goal vecotor
+
+transform = np.matrix([[float(width/2 +10)],[ float(height +10)]])
+
+theta=np.matrix([[180.0],[-180.0]])
+
+global t,uArm,vPuck
+t=1.0       #time for the puck to score
+uArm=np.matrix([[0.0],[0.0]])
+vPuck=np.matrix([[0.0],[0.0]])
+###############
+
+def initialize():
+    global a,u,pos
+    a=np.matrix([[-10.0], [-10.0]])         #deceleration rate of puck
+    u=np.matrix([[00.0], [400.0]])       #initial velocity of puck as column vector
+    pos=np.matrix([[160.0],[10.0]])         #initial position of puck as column vector
+
+def newPos(t):
+    global a,u,pos
+    if u[0][0]>0:
+        a[0][0]= -1*abs(a[0][0])
+    else:
+        a[0][0]= abs(a[0][0])
+            
+    if u[1][0]>0:
+        a[1][0]= -1*abs(a[1][0])
+    else:
+        a[1][0]= abs(a[1][0])
+
+    u+= a*t
+    pos+=u*t
+
+    if pos[0][0]>width+10 or pos[0][0]<10:
+        u[0][0]=-0.95*(u[0][0])    #restitution factor for rebounding
+       
+    if pos[1][0]>height+10 or pos[1][0]<10:
+        u[1][0]=-0.95*(u[1][0])
+
+    #print np.asarray(pos)
+
+
+def predict(pos,reach):
+    global predictTime
+    predictTime=0.0
+    while pos[1][0] <= reach:
+        newPos(dt)
+        predictTime+=dt
+        if predictTime>999:
+            print "Doesnt reach"
+            break
+    return pos,predictTime
+
+def prediciton():
+    global predictPos,predictTime
+    predictPos,predictTime= predict(pos,450)
+    if randint(0,1):
+        initialize()
+    
+#FK definition
+def fkine():
+    e[0] = L*(np.cos(np.deg2rad(theta[0])) + np.cos(np.deg2rad(theta[0]+theta[1])))
+    e[1] = L*(np.sin(np.deg2rad(theta[0])) + np.sin(np.deg2rad(theta[0]+theta[1])))
+
+# compute jacobian
+
+def jacobian():
+    J[0,0] =  -L*(np.sin(np.deg2rad(theta[0])) + np.sin(np.deg2rad(theta[0]+theta[1])))
+    J[0,1] =  -L*(np.sin(np.deg2rad(theta[0]+theta[1])))
+    J[1,0] =   L*(np.cos(np.deg2rad(theta[0])) + np.cos(np.deg2rad(theta[0]+theta[1])))
+    J[1,1] =   L*(np.cos(np.deg2rad(theta[0]+theta[1])))
+
+def kinematics():
+    global theta
+    fkine()
+ 
+    G[0]=predictPos[0]-transform[0]-e[0]
+    G[1]=-predictPos[1]+transform[1]-e[1]
+    
+    jacobian()
+    Jinv=np.matrix.transpose(np.mat(J))*np.linalg.inv((np.mat(J)*np.matrix.transpose(np.mat(J)) + 40.0*np.identity(2))) #DLS
+
+    de=G/predictTime
+
+    dtheta = Jinv*de
+    theta+=dtheta
+
+    
+if __name__ == "__main__":
+
+    initialize()
+    prediciton()
+    initialize()
+    screen = pygame.display.set_mode((width+20, height+20))
+    pygame.display.set_caption('AIR HOCKEY SIMULATOR')
+    screen.fill(background_colour)
+
+    print predictPos, predictTime
+    
+    while 1:
+        
+        newPos(dt)
+
+        kinematics()
+
+        if abs(np.sum(pos-predictPos))<1:
+            break
+        pygame.draw.line(screen, armcolor, (width/2 +10, height+10 ),(width/2 +10 + int(L*np.cos(np.deg2rad(theta[0]))) , height+10 - int(L*np.sin(np.deg2rad(theta[0])))) , 5)
+        pygame.draw.line(screen, armcolor, (width/2 +10 + e[0], height+10 - e[1] ),(width/2 +10 + int(L*np.cos(np.deg2rad(theta[0]))) , height+10 - int(L*np.sin(np.deg2rad(theta[0])))) , 5)
+
+        pygame.draw.line(screen, linecolor, (10,int(predictPos[1][0])),(width+10, int(predictPos[1][0])) , 1)
+        pygame.draw.circle(screen, linecolor, (int(predictPos[0][0]), int(predictPos[1][0]) ) , 5, 1)
+
+        pygame.draw.line(screen, linecolor,(10,height/2 +10),(width+10,height/2+10) , 2)
+        pygame.draw.circle(screen, linecolor, (width/2 +10 , height/2 +10 ) , 60, 2)
+        pygame.draw.circle(screen, puckcolor, (int(pos[0,0]),int(pos[1,0]) ) , 8, 0)
+        pygame.draw.line(screen, linecolor,origin,(width+10,10) , 5)
+        pygame.draw.line(screen, linecolor,origin,(10,height+10) , 5)
+        pygame.draw.line(screen, linecolor,(width+10,10), (width+10, height+10), 5)
+        pygame.draw.line(screen, linecolor,(10,height+10), (width+10, height+10) , 5)
+        
+        pygame.display.flip()
+        time.sleep(dt)
+        screen.fill(background_colour)
+
+        velocity=np.sqrt(np.square(u[0][0]) + np.square(u[1][0]))
+   
